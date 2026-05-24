@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>電費分析 Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#F0F4FA;color:#1E293B;min-height:100vh}
+
+/* TOPBAR */
+.topbar{
+  background:linear-gradient(90deg,#1E3A5F 0%,#2563EB 100%);
+  padding:14px 28px;display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:10px
+}
+.topbar h1{color:#fff;font-size:1.2rem;font-weight:800;letter-spacing:.5px}
+.topbar p{color:#BFDBFE;font-size:0.72rem;margin-top:2px}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap}
+.fbtn{
+  padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.3);
+  background:rgba(255,255,255,.1);color:#fff;font-size:0.78rem;font-weight:700;
+  cursor:pointer;transition:all .15s
+}
+.fbtn:hover{background:rgba(255,255,255,.25)}
+.fbtn.on{background:#fff;color:#2563EB;border-color:#fff}
+
+/* KPI ROW */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:20px 24px 0}
+@media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.kpi-row{grid-template-columns:1fr 1fr}}
+
+.kpi{background:#fff;border-radius:10px;overflow:hidden;
+     box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.kpi-head{padding:8px 14px;display:flex;align-items:center;gap:8px}
+.kpi-head span{font-size:0.7rem;font-weight:800;color:#fff;letter-spacing:.8px;text-transform:uppercase}
+.kpi-body{padding:12px 16px 14px}
+.kpi-val{font-size:1.65rem;font-weight:800;color:#1E293B;letter-spacing:-1px;line-height:1.1}
+.kpi-note{font-size:0.9rem;color:#94A3B8;margin-top:4px;font-weight:600}
+
+.kpi-blue  .kpi-head{background:#2563EB}
+.kpi-green .kpi-head{background:#059669}
+.kpi-amber .kpi-head{background:#D97706}
+.kpi-rose  .kpi-head{background:#E11D48}
+
+/* MAIN GRID */
+.main{padding:16px 24px 24px;max-width:1400px;margin:0 auto}
+
+.row1{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-top:16px}
+.row2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:14px}
+@media(max-width:1100px){.row1{grid-template-columns:1fr 1fr}.row2{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.row1,.row2{grid-template-columns:1fr}}
+
+.card{background:#fff;border-radius:10px;padding:16px 18px;
+      box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.card-title{font-size:0.8rem;font-weight:800;color:#334155;margin-bottom:12px;
+            padding-bottom:8px;border-bottom:1.5px solid #F1F5F9}
+.chart-wrap{position:relative;width:100%}
+
+/* TABLE */
+.tbl-card{background:#fff;border-radius:10px;padding:16px 18px;
+          box-shadow:0 2px 10px rgba(0,0,0,.07);margin-top:14px}
+table{width:100%;border-collapse:collapse;font-size:0.8rem}
+thead th{background:#F8FAFC;color:#475569;font-weight:700;padding:8px 12px;
+         text-align:center;border-bottom:2px solid #E2E8F0}
+tbody td{padding:7px 12px;border-bottom:1px solid #F8FAFC;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#F8FAFC}
+.tr-anom td{background:#FFFBEB!important;color:#B45309}
+.tc{text-align:center}.tr{text-align:right}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:0.68rem;font-weight:700}
+.bs{background:#FEF3C7;color:#B45309}.bw{background:#DBEAFE;color:#1D4ED8}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>⚡ 電費分析 Dashboard</h1>
+    <p>帳號 10-09-4150-35-2 · 表燈非營業用 · 費率版本 A（113/04–114/09）/ 版本 B（114/10起）</p>
+  </div>
+  <div class="filter-row" id="fg">
+    <button class="fbtn on" data-f="all">每期</button>
+    <button class="fbtn" data-f="half">每半年</button>
+    <button class="fbtn" data-f="year">每年度</button>
+    <button class="fbtn" data-f="summer">夏季</button>
+    <button class="fbtn" data-f="winter">非夏季</button>
+  </div>
+</div>
+
+<!-- KPI -->
+<div class="kpi-row">
+  <div class="kpi kpi-blue">
+    <div class="kpi-head"><span>💰 累計總電費</span></div>
+    <div class="kpi-body">
+      <div class="kpi-val" id="v1">—</div>
+      <div class="kpi-note" id="n1">—</div>
+    </div>
+  </div>
+  <div class="kpi kpi-green">
+    <div class="kpi-head"><span>⚡ 流動費用</span></div>
+    <div class="kpi-body">
+      <div class="kpi-val" id="v2">—</div>
+      <div class="kpi-note" id="n2">—</div>
+    </div>
+  </div>
+  <div class="kpi kpi-amber">
+    <div class="kpi-head"><span>🏢 公共費用</span></div>
+    <div class="kpi-body">
+      <div class="kpi-val" id="v3">—</div>
+      <div class="kpi-note" id="n3">—</div>
+    </div>
+  </div>
+  <div class="kpi kpi-rose">
+    <div class="kpi-head"><span>📏 用電度數</span></div>
+    <div class="kpi-body">
+      <div class="kpi-val" id="v4">—</div>
+      <div class="kpi-note" id="n4">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Row 1: big stacked bar + donut + line -->
+  <div class="row1">
+    <div class="card">
+      <div class="card-title">📊 各期電費構成（流動 + 公共）</div>
+      <div class="chart-wrap" style="height:240px">
+        <canvas id="cBar"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🍩 流動 vs 公共 佔比</div>
+      <div class="chart-wrap" style="height:240px">
+        <canvas id="cPie"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📈 總電費趨勢</div>
+      <div class="chart-wrap" style="height:240px">
+        <canvas id="cLine"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: degrees bar + grouped bar + horizontal bar -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-title">📏 每期用電度數</div>
+      <div class="chart-wrap" style="height:210px">
+        <canvas id="cDeg"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💹 流動 vs 公共 逐期對比</div>
+      <div class="chart-wrap" style="height:210px">
+        <canvas id="cGroup"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📆 年度 / 季節 彙總</div>
+      <div class="chart-wrap" style="height:210px">
+        <canvas id="cSummary"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="tbl-card">
+    <div class="card-title">📋 明細資料</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>帳單月份</th><th>季節</th><th>度數</th>
+          <th>流動費用</th><th>公共費用</th><th>總電費</th><th>流動%</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// DATA BLOCK — Claude Code 同步更新此區塊
+// ══════════════════════════════════════════════
+const RAW=[
+  {period:"113/09",deg:312, total:80,   summer:true, ver:"A",anom:true, half:"113下",year:"113"},
+  {period:"113/11",deg:358, total:2509, summer:false,ver:"A",anom:false,half:"113下",year:"113"},
+  {period:"114/01",deg:381, total:2291, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
+  {period:"114/03",deg:406, total:2282, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
+  {period:"114/05",deg:425, total:2496, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
+  {period:"114/07",deg:419, total:2756, summer:false,ver:"A",anom:false,half:"114下",year:"114"},
+  {period:"114/09",deg:418, total:3493, summer:true, ver:"A",anom:false,half:"114下",year:"114"},
+  {period:"114/11",deg:395, total:2893, summer:false,ver:"A",anom:false,half:"114下",year:"114"},
+  {period:"115/01",deg:312, total:2156, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
+  {period:"115/03",deg:345, total:2178, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
+  {period:"115/05",deg:314, total:2195, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
+];
+// ══════════════════════════════════════════════
+
+function calcFlow(deg,s,v){
+  const tbl={
+    A:{s:[[120,1.68],[210,2.45],[170,3.70],[200,5.04],[299,6.24],[9999,8.46]],
+       n:[[120,1.68],[210,2.16],[170,3.03],[200,4.14],[299,5.07],[9999,6.63]]},
+    B:{s:[[120,1.78],[210,2.55],[170,3.80],[200,5.14],[299,6.44],[9999,8.86]],
+       n:[[120,1.78],[210,2.26],[170,3.13],[200,4.24],[299,5.27],[9999,7.03]]}
+  };
+  let r=0,rem=deg;
+  for(const[l,p]of tbl[v][s?'s':'n']){const c=Math.min(rem,l);r+=c*p;rem-=c;if(rem<=0)break}
+  return Math.round(r);
+}
+
+const DATA=RAW.map(r=>{
+  const f=calcFlow(r.deg,r.summer,r.ver);
+  return{...r,flow:f,pub:r.anom?null:r.total-f};
+});
+
+function aggBy(rows,keyFn){
+  const m=new Map();
+  for(const r of rows){
+    if(r.anom)continue;
+    const k=keyFn(r);
+    if(!m.has(k))m.set(k,{label:k,deg:0,flow:0,pub:0,total:0,count:0});
+    const g=m.get(k);
+    g.deg+=r.deg;g.flow+=r.flow;g.pub+=r.pub;g.total+=r.total;g.count++;
+  }
+  return[...m.values()];
+}
+
+function getRows(f){
+  if(f==='all')    return DATA.filter(r=>!r.anom);
+  if(f==='summer') return DATA.filter(r=>!r.anom&&r.summer);
+  if(f==='winter') return DATA.filter(r=>!r.anom&&!r.summer);
+  if(f==='half')   return aggBy(DATA,r=>r.half);
+  if(f==='year')   return aggBy(DATA,r=>r.year+'年');
+  return DATA.filter(r=>!r.anom);
+}
+
+const $=id=>document.getElementById(id);
+const money=n=>n==null?'—':'$'+n.toLocaleString('zh-TW');
+
+// chart registry
+const CH={};
+function mk(id,type,data,options){
+  if(CH[id]){CH[id].destroy()}
+  const ctx=$(id).getContext('2d');
+  CH[id]=new Chart(ctx,{type,data,options});
+}
+
+// colour palette
+const C={
+  blue:'#3B82F6',   blue2:'#93C5FD', blue3:'rgba(59,130,246,.12)',
+  green:'#10B981',  green2:'rgba(16,185,129,.15)',
+  amber:'#F59E0B',  amber2:'rgba(245,158,11,.2)',
+  rose:'#F43F5E',
+  navy:'#1D4ED8',   sky:'#38BDF8',
+  slate:'#94A3B8',  grid:'#F1F5F9',
+};
+const gridOpts={color:C.grid};
+const tickFont={size:10};
+const legFont={size:11};
+
+function render(filter){
+  const rows=getRows(filter);
+  const lbs  =rows.map(r=>r.label||r.period);
+  const flows=rows.map(r=>r.flow??0);
+  const pubs =rows.map(r=>r.pub??0);
+  const tots =rows.map(r=>r.total??0);
+  const degs =rows.map(r=>r.deg??0);
+  const sT=tots.reduce((a,b)=>a+b,0);
+  const sF=flows.reduce((a,b)=>a+b,0);
+  const sP=pubs.reduce((a,b)=>a+b,0);
+  const sD=degs.reduce((a,b)=>a+b,0);
+  const n=rows.length;
+
+  // KPI
+  $('v1').textContent=money(sT); $('n1').textContent=`共 ${n} 期`;
+  $('v2').textContent=money(sF); $('n2').textContent=sT?`佔 ${(sF/sT*100).toFixed(1)}% 總費用`:'';
+  $('v3').textContent=money(sP); $('n3').textContent=sT?`佔 ${(sP/sT*100).toFixed(1)}% 總費用`:'';
+  $('v4').textContent=sD.toLocaleString()+'度';
+  $('n4').textContent=n?`平均 ${Math.round(sD/n)} 度／期`:'';
+
+  const baseOpts=(yLabel,yCb)=>({
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{font:legFont,boxWidth:12,padding:10}}},
+    scales:{
+      x:{grid:{display:false},ticks:{font:tickFont}},
+      y:{grid:gridOpts,ticks:{font:tickFont,callback:yCb||undefined},title:{display:!!yLabel,text:yLabel,font:{size:10}}}
+    }
+  });
+
+  // 1. Stacked bar
+  mk('cBar','bar',
+    {labels:lbs,datasets:[
+      {label:'流動費用',data:flows,backgroundColor:C.blue,  borderRadius:4,stack:'s'},
+      {label:'公共費用',data:pubs, backgroundColor:C.blue2, borderRadius:4,stack:'s'},
+    ]},
+    {responsive:true,maintainAspectRatio:false,
+     plugins:{legend:{labels:{font:legFont,boxWidth:12}}},
+     scales:{
+       x:{stacked:true,grid:{display:false},ticks:{font:tickFont}},
+       y:{stacked:true,grid:gridOpts,ticks:{font:tickFont,callback:v=>'$'+v.toLocaleString()}}
+     }}
+  );
+
+  // 2. Doughnut
+  mk('cPie','doughnut',
+    {labels:['流動費用','公共費用'],
+     datasets:[{data:[sF,sP],
+       backgroundColor:[C.blue,C.amber],
+       borderWidth:3,borderColor:'#fff',hoverOffset:10}]},
+    {responsive:true,maintainAspectRatio:false,cutout:'58%',
+     plugins:{
+       legend:{position:'bottom',labels:{font:legFont,padding:12,boxWidth:12}},
+       tooltip:{callbacks:{label:c=>{
+         const t=c.dataset.data.reduce((a,b)=>a+b,0);
+         return ` ${c.label}: $${c.raw.toLocaleString()} (${t?(c.raw/t*100).toFixed(1):0}%)`;
+       }}}
+     }}
+  );
+
+  // 3. Line total
+  mk('cLine','line',
+    {labels:lbs,datasets:[
+      {label:'總電費',data:tots,
+       borderColor:C.navy,backgroundColor:C.blue3,
+       fill:true,tension:.35,
+       pointRadius:5,pointBackgroundColor:C.navy,pointBorderColor:'#fff',pointBorderWidth:2}
+    ]},
+    {responsive:true,maintainAspectRatio:false,
+     plugins:{legend:{display:false}},
+     scales:{
+       x:{grid:{display:false},ticks:{font:tickFont}},
+       y:{grid:gridOpts,ticks:{font:tickFont,callback:v=>'$'+v.toLocaleString()}}
+     }}
+  );
+
+  // 4. Degrees bar
+  mk('cDeg','bar',
+    {labels:lbs,datasets:[
+      {label:'度數',data:degs,
+       backgroundColor:C.green2,borderColor:C.green,
+       borderWidth:1.5,borderRadius:5}
+    ]},
+    {responsive:true,maintainAspectRatio:false,
+     plugins:{legend:{display:false}},
+     scales:{
+       x:{grid:{display:false},ticks:{font:tickFont}},
+       y:{grid:gridOpts,ticks:{font:tickFont,callback:v=>v+'度'}}
+     }}
+  );
+
+  // 5. Grouped bar flow vs pub
+  mk('cGroup','bar',
+    {labels:lbs,datasets:[
+      {label:'流動費用',data:flows,backgroundColor:C.blue,  borderRadius:4},
+      {label:'公共費用',data:pubs, backgroundColor:C.amber, borderRadius:4},
+    ]},
+    {responsive:true,maintainAspectRatio:false,
+     plugins:{legend:{labels:{font:legFont,boxWidth:12}}},
+     scales:{
+       x:{grid:{display:false},ticks:{font:tickFont}},
+       y:{grid:gridOpts,ticks:{font:tickFont,callback:v=>'$'+v.toLocaleString()}}
+     }}
+  );
+
+  // 6. Summary bar (by year + season, always static)
+  const byYear=aggBy(DATA,r=>r.year+'年');
+  const bySeason=aggBy(DATA,r=>r.summer?'夏季':'非夏季');
+  const sumLbs=[...byYear.map(r=>r.label),'|夏季','|非夏季']
+    .filter(x=>x!=='|夏季'&&x!=='|非夏季');
+  // use simple year total for summary chart
+  mk('cSummary','bar',
+    {labels:[...byYear.map(r=>r.label),...bySeason.map(r=>r.label)],
+     datasets:[
+       {label:'流動費用',data:[...byYear.map(r=>r.flow),...bySeason.map(r=>r.flow)],backgroundColor:C.blue,borderRadius:4},
+       {label:'公共費用',data:[...byYear.map(r=>r.pub),...bySeason.map(r=>r.pub)],backgroundColor:C.amber,borderRadius:4},
+     ]},
+    {responsive:true,maintainAspectRatio:false,
+     plugins:{legend:{labels:{font:legFont,boxWidth:12}}},
+     scales:{
+       x:{grid:{display:false},ticks:{font:tickFont}},
+       y:{grid:gridOpts,ticks:{font:tickFont,callback:v=>'$'+v.toLocaleString()}}
+     }}
+  );
+
+  // Table
+  const showAll=(filter==='all'||filter==='summer'||filter==='winter');
+  const src=showAll
+    ? DATA.filter(r=>filter==='summer'?r.summer:filter==='winter'?!r.summer:true)
+    : rows;
+
+  $('tb').innerHTML=src.map(r=>{
+    const pct=!r.anom&&r.total?(r.flow/r.total*100).toFixed(1)+'%':'—';
+    const sb=r.summer!=null?(r.summer?'<span class="badge bs">夏季</span>':'<span class="badge bw">非夏季</span>'):'';
+    const lbl=r.label||r.period;
+    return`<tr class="${r.anom?'tr-anom':''}">
+      <td class="tc"><b>${lbl}</b></td>
+      <td class="tc">${sb}</td>
+      <td class="tr">${r.deg!=null?r.deg.toLocaleString()+' 度':'—'}</td>
+      <td class="tr">${money(r.flow)}${r.anom?' <small style="color:#B45309">(估算)</small>':''}</td>
+      <td class="tr">${r.anom?'<i>溢繳抵扣</i>':money(r.pub)}</td>
+      <td class="tr"><b>${money(r.total)}</b></td>
+      <td class="tc">${pct}</td>
+    </tr>`;
+  }).join('');
+}
+
+render('all');
+
+$('fg').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtn');if(!b)return;
+  document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  render(b.dataset.f);
+});
+</script>
+</body>
+</html>
