@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏠 冷氣耗電 Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#F0F4FA;color:#1E293B;min-height:100vh}
+
+/* TOPBAR */
+.topbar{background:linear-gradient(90deg,#1E3A5F,#2563EB);padding:14px 24px;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.topbar h1{color:#fff;font-size:1.2rem;font-weight:800}
+.topbar p{color:#BFDBFE;font-size:0.72rem;margin-top:2px}
+.topbar-link{color:#93C5FD;font-size:0.75rem;text-decoration:none}
+.topbar-link:hover{color:#fff}
+
+/* SETTINGS PANEL */
+.settings-bar{background:#fff;border-bottom:1px solid #E2E8F0;padding:12px 24px;
+  display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+.setting-group{display:flex;flex-direction:column;gap:4px}
+.setting-group label{font-size:0.72rem;font-weight:700;color:#64748B}
+.setting-group input,.setting-group select{
+  padding:5px 10px;border:1.5px solid #BFDBFE;border-radius:6px;
+  font-size:0.85rem;font-weight:600;color:#1E293B;background:#EFF6FF;
+  outline:none;cursor:pointer}
+.setting-group input{width:80px}
+.setting-group input:focus,.setting-group select:focus{border-color:#2563EB}
+
+/* AC TOGGLE */
+.ac-toggles{background:#fff;border-bottom:1px solid #E2E8F0;padding:10px 24px;
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ac-toggle-label{font-size:0.75rem;font-weight:700;color:#64748B;margin-right:4px}
+.ac-btn{padding:6px 14px;border-radius:20px;border:2px solid #E2E8F0;
+  background:#F8FAFC;color:#64748B;font-size:0.8rem;font-weight:700;
+  cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:1px}
+.ac-btn span.loc{font-size:0.75rem}
+.ac-btn span.model{font-size:0.65rem;opacity:.7}
+.ac-btn.on{background:#2563EB;color:#fff;border-color:#2563EB}
+.ac-btn.on span.model{opacity:.8}
+
+/* MAIN */
+.main{padding:18px 24px;max-width:1400px;margin:0 auto}
+
+/* KPI */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+@media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.kpi-row{grid-template-columns:1fr 1fr}}
+
+.kpi{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.kpi-head{padding:8px 14px;display:flex;align-items:center;gap:6px}
+.kpi-head span{font-size:0.72rem;font-weight:800;color:#fff;letter-spacing:.5px;text-transform:uppercase}
+.kpi-body{padding:12px 16px 14px}
+.kpi-val{font-size:1.6rem;font-weight:800;color:#1E293B;letter-spacing:-1px;line-height:1.1}
+.kpi-note{font-size:0.72rem;color:#94A3B8;margin-top:4px;font-weight:600}
+.kpi-blue  .kpi-head{background:#2563EB}
+.kpi-green .kpi-head{background:#059669}
+.kpi-amber .kpi-head{background:#D97706}
+.kpi-rose  .kpi-head{background:#7C3AED}
+
+/* CHARTS */
+.row1{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:900px){.row1,.row2{grid-template-columns:1fr}}
+
+.card{background:#fff;border-radius:10px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.card h3{font-size:0.82rem;font-weight:800;color:#334155;margin-bottom:12px;
+  padding-bottom:8px;border-bottom:1.5px solid #F1F5F9}
+
+/* TABLE */
+.tbl-card{background:#fff;border-radius:10px;padding:16px 18px;
+  box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:0.8rem}
+thead th{background:#F8FAFC;color:#475569;font-weight:700;padding:8px 12px;
+  text-align:center;border-bottom:2px solid #E2E8F0}
+tbody td{padding:7px 12px;border-bottom:1px solid #F8FAFC;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#F8FAFC}
+.tr-off td{opacity:.4}
+.tc{text-align:center}.tr{text-align:right}
+
+/* CALC PANEL */
+.calc-card{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;
+  padding:14px 18px;margin-bottom:14px}
+.calc-card h3{font-size:0.82rem;font-weight:800;color:#1E3A5F;margin-bottom:10px}
+.calc-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:700px){.calc-steps{grid-template-columns:repeat(2,1fr)}}
+.calc-step{background:#fff;border-radius:8px;padding:10px 12px;text-align:center;
+  border:1px solid #BFDBFE}
+.calc-step .cs-label{font-size:0.7rem;color:#64748B;font-weight:600}
+.calc-step .cs-val{font-size:1.1rem;font-weight:800;color:#2563EB;margin-top:4px}
+.calc-step .cs-note{font-size:0.65rem;color:#94A3B8;margin-top:2px}
+
+.footer{text-align:center;padding:14px;font-size:0.72rem;color:#94A3B8}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>🏠 冷氣耗電 Dashboard</h1>
+    <p>HITACHI 日立 NJP 頂級系列 · 費率依加權平均計算 · 2026</p>
+  </div>
+  <a href="index.html" class="topbar-link">← 電費分析 Dashboard</a>
+</div>
+
+<!-- Settings -->
+<div class="settings-bar">
+  <div class="setting-group">
+    <label>起始室溫（度）</label>
+    <input type="number" id="startTemp" value="32" min="20" max="40" step="1">
+  </div>
+  <div class="setting-group">
+    <label>設定溫度（度）</label>
+    <input type="number" id="setTemp" value="28" min="18" max="30" step="1">
+  </div>
+  <div class="setting-group">
+    <label>開機時數</label>
+    <select id="hours">
+      <option value="2" selected>2小時</option>
+      <option value="3">3小時</option>
+      <option value="4">4小時</option>
+      <option value="6">6小時</option>
+      <option value="8">8小時</option>
+    </select>
+  </div>
+  <div class="setting-group">
+    <label>隔熱等級</label>
+    <select id="insulation">
+      <option value="4">佳（4度/小時）</option>
+      <option value="2.5" selected>一般（2.5度/小時）</option>
+      <option value="1.5">差（1.5度/小時）</option>
+    </select>
+  </div>
+  <div class="setting-group">
+    <label>維持階段負載率</label>
+    <select id="loadRate">
+      <option value="0.15" selected>低（15%）21:00–08:00</option>
+      <option value="0.30">中（30%）08:00–13:00</option>
+      <option value="0.40">高（40%）13:00–21:00</option>
+    </select>
+  </div>
+</div>
+
+<!-- AC Toggles -->
+<div class="ac-toggles">
+  <span class="ac-toggle-label">選擇開啟的冷氣：</span>
+  <button class="ac-btn on"  data-idx="0" onclick="toggle(0)"><span class="loc">客廳</span><span class="model">2.5匹 RAS-63NJP</span></button>
+  <button class="ac-btn on"  data-idx="1" onclick="toggle(1)"><span class="loc">主臥</span><span class="model">2匹 RAS-50NJP</span></button>
+  <button class="ac-btn"     data-idx="2" onclick="toggle(2)"><span class="loc">餐桌</span><span class="model">2匹 RAS-50NJP</span></button>
+  <button class="ac-btn"     data-idx="3" onclick="toggle(3)"><span class="loc">次臥</span><span class="model">1.5匹 RAS-36NJP</span></button>
+  <button class="ac-btn on"  data-idx="4" onclick="toggle(4)"><span class="loc">書房</span><span class="model">1匹 RAS-28NJP</span></button>
+</div>
+
+<div class="main">
+
+  <!-- KPI -->
+  <div class="kpi-row">
+    <div class="kpi kpi-blue">
+      <div class="kpi-head"><span>💰 每月費用（非夏季）</span></div>
+      <div class="kpi-body"><div class="kpi-val" id="kpi1">—</div><div class="kpi-note" id="kpi1n">—</div></div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="kpi-head"><span>☀️ 每月費用（夏季）</span></div>
+      <div class="kpi-body"><div class="kpi-val" id="kpi2">—</div><div class="kpi-note" id="kpi2n">—</div></div>
+    </div>
+    <div class="kpi kpi-rose">
+      <div class="kpi-head"><span>⚡ 加權負載率</span></div>
+      <div class="kpi-body"><div class="kpi-val" id="kpi3">—</div><div class="kpi-note" id="kpi3n">—</div></div>
+    </div>
+    <div class="kpi kpi-green">
+      <div class="kpi-head"><span>🏠 開啟台數</span></div>
+      <div class="kpi-body"><div class="kpi-val" id="kpi4">—</div><div class="kpi-note" id="kpi4n">—</div></div>
+    </div>
+  </div>
+
+  <!-- Calc steps -->
+  <div class="calc-card">
+    <h3>📐 加權負載率推算過程</h3>
+    <div class="calc-steps">
+      <div class="calc-step">
+        <div class="cs-label">溫差</div>
+        <div class="cs-val" id="cs1">—</div>
+        <div class="cs-note">起始 - 設定溫度</div>
+      </div>
+      <div class="calc-step">
+        <div class="cs-label">降溫時間</div>
+        <div class="cs-val" id="cs2">—</div>
+        <div class="cs-note">溫差 ÷ 降溫速率</div>
+      </div>
+      <div class="calc-step">
+        <div class="cs-label">維持時間</div>
+        <div class="cs-val" id="cs3">—</div>
+        <div class="cs-note">開機時數 - 降溫時間</div>
+      </div>
+      <div class="calc-step">
+        <div class="cs-label">加權負載率</div>
+        <div class="cs-val" id="cs4">—</div>
+        <div class="cs-note">降溫×100% + 維持×負載率</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="row1">
+    <div class="card">
+      <h3>📊 各台冷氣每月費用（勾選台數）</h3>
+      <div style="height:240px"><canvas id="cBar"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>🍩 夏季費用佔比（勾選台數）</h3>
+      <div style="height:240px"><canvas id="cDonut"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="row2">
+    <div class="card">
+      <h3>📈 每小時實際費用比較</h3>
+      <div style="height:200px"><canvas id="cHourly"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>📏 實際耗電量 vs 額定耗電量</h3>
+      <div style="height:200px"><canvas id="cWatt"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Detail table -->
+  <div class="tbl-card">
+    <h3 style="font-size:.82rem;font-weight:800;color:#334155;margin-bottom:12px;padding-bottom:8px;border-bottom:1.5px solid #F1F5F9">📋 各台冷氣明細</h3>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>安裝位置</th><th>機型</th><th>匹數</th>
+          <th>額定耗電</th><th>加權負載率</th><th>實際耗電</th>
+          <th>非夏季/小時</th><th>夏季/小時</th>
+          <th>非夏季/月</th><th>夏季/月</th>
+        </tr></thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<div class="footer">🏠 冷氣耗電 Dashboard · HITACHI 日立 NJP 頂級系列 · Claude Code 同步</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// AC SPECS DATA
+// ══════════════════════════════════════════════════════
+const ACS = [
+  { loc:"客廳", model:"RAS-63NJP", match:"2.5匹", w:1360, cspf:6.76, sqm:"9–10坪" },
+  { loc:"主臥", model:"RAS-50NJP", match:"2匹",   w:1025, cspf:5.85, sqm:"7–8坪"  },
+  { loc:"餐桌", model:"RAS-50NJP", match:"2匹",   w:1025, cspf:5.85, sqm:"7–8坪"  },
+  { loc:"次臥", model:"RAS-36NJP", match:"1.5匹", w:729,  cspf:6.21, sqm:"5–6坪"  },
+  { loc:"書房", model:"RAS-28NJP", match:"1匹",   w:519,  cspf:8.50, sqm:"約4坪"  },
+];
+
+// Weighted average rates from actual bills
+// Summer: 114/09 (418度, $1,042 flow) → $1,042/418 = 2.49元/度
+// Non-summer: 114/01 (381度, $810 flow) → $810/381 = 2.13元/度
+const RATE_NS = 2.13;  // non-summer weighted avg
+const RATE_S  = 2.49;  // summer weighted avg
+
+// Toggle state
+const ON = [true, true, false, false, true];
+
+function toggle(idx) {
+  ON[idx] = !ON[idx];
+  const btns = document.querySelectorAll('.ac-btn');
+  btns[idx].classList.toggle('on', ON[idx]);
+  render();
+}
+
+// ── Calculation ───────────────────────────────────────
+function calcLoadFactor(startT, setT, hours, insulRate, maintenanceLoad) {
+  const diff = startT - setT;
+  const coolTime = Math.min(diff / insulRate, hours);
+  const maintTime = Math.max(hours - coolTime, 0);
+  const loadFactor = hours > 0 ? (coolTime * 1.0 + maintTime * maintenanceLoad) / hours : 0;
+  return { diff, coolTime, maintTime, loadFactor };
+}
+
+function calcCosts(ac, loadFactor, hours) {
+  const actualW = ac.w * loadFactor;
+  const nsHr = (actualW / 1000) * RATE_NS;
+  const sHr  = (actualW / 1000) * RATE_S;
+  const nsMo = nsHr * hours * 30;
+  const sMo  = sHr  * hours * 30;
+  return { actualW, nsHr, sHr, nsMo, sMo };
+}
+
+const $ = id => document.getElementById(id);
+const fmt = n => '$' + Math.round(n).toLocaleString('zh-TW');
+const fmtD = (n,d=1) => n.toFixed(d);
+
+// Chart registry
+const CH = {};
+function mk(id, type, data, options) {
+  if (CH[id]) CH[id].destroy();
+  CH[id] = new Chart($(id), { type, data, options });
+}
+
+function render() {
+  const startT    = parseFloat($('startTemp').value) || 32;
+  const setT      = parseFloat($('setTemp').value)   || 28;
+  const hours     = parseFloat($('hours').value)     || 2;
+  const insulRate = parseFloat($('insulation').value)|| 2.5;
+  const mLoad     = parseFloat($('loadRate').value)  || 0.15;
+
+  const { diff, coolTime, maintTime, loadFactor } = calcLoadFactor(startT, setT, hours, insulRate, mLoad);
+
+  // Calc steps
+  $('cs1').textContent = diff.toFixed(1) + ' 度';
+  $('cs2').textContent = fmtD(coolTime) + ' 小時';
+  $('cs3').textContent = fmtD(maintTime) + ' 小時';
+  $('cs4').textContent = (loadFactor * 100).toFixed(1) + '%';
+
+  // Per-AC results
+  const results = ACS.map((ac, i) => ({
+    ...ac,
+    on: ON[i],
+    ...calcCosts(ac, loadFactor, hours)
+  }));
+
+  const onResults = results.filter(r => r.on);
+  const totalNS = onResults.reduce((s, r) => s + r.nsMo, 0);
+  const totalS  = onResults.reduce((s, r) => s + r.sMo,  0);
+  const onCount = onResults.length;
+
+  // KPI
+  $('kpi1').textContent = fmt(totalNS);
+  $('kpi1n').textContent = `${onCount} 台開啟・非夏季估算`;
+  $('kpi2').textContent = fmt(totalS);
+  $('kpi2n').textContent = `${onCount} 台開啟・夏季估算`;
+  $('kpi3').textContent = (loadFactor * 100).toFixed(1) + '%';
+  $('kpi3n').textContent = `起始${startT}度 → 設定${setT}度・${hours}小時`;
+  $('kpi4').textContent = onCount + ' 台';
+  $('kpi4n').textContent = `${onCount} / 5 台開啟`;
+
+  // Bar chart (monthly, ON only)
+  const barLocs = results.map(r => r.loc);
+  const barNS   = results.map(r => r.on ? r.nsMo : 0);
+  const barS    = results.map(r => r.on ? r.sMo  : 0);
+
+  mk('cBar', 'bar', {
+    labels: barLocs,
+    datasets: [
+      { label:'非夏季月費', data:barNS, backgroundColor:'#10B981', borderRadius:4 },
+      { label:'夏季月費',   data:barS,  backgroundColor:'#F59E0B', borderRadius:4 },
+    ]
+  }, {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:12 }}},
+    scales:{
+      x:{ grid:{display:false}, ticks:{font:{size:11}} },
+      y:{ grid:{color:'#F1F5F9'}, ticks:{ font:{size:10}, callback:v=>'$'+v.toLocaleString() }}
+    }
+  });
+
+  // Doughnut (summer, ON only)
+  const donutData = results.map(r => r.on ? r.sMo : 0);
+  mk('cDonut', 'doughnut', {
+    labels: barLocs,
+    datasets:[{ data:donutData,
+      backgroundColor:['#3B82F6','#10B981','#F59E0B','#E11D48','#7C3AED'],
+      borderWidth:3, borderColor:'#fff', hoverOffset:8 }]
+  }, {
+    responsive:true, maintainAspectRatio:false, cutout:'58%',
+    plugins:{
+      legend:{ position:'right', labels:{ font:{size:11}, padding:10, boxWidth:12 }},
+      tooltip:{ callbacks:{ label:c => {
+        const t = c.dataset.data.reduce((a,b)=>a+b,0);
+        return ` ${c.label}: $${Math.round(c.raw).toLocaleString()} (${t?(c.raw/t*100).toFixed(1):0}%)`;
+      }}}
+    }
+  });
+
+  // Hourly chart
+  mk('cHourly', 'bar', {
+    labels: barLocs,
+    datasets:[
+      { label:'非夏季/小時', data:results.map(r=>r.nsHr), backgroundColor:'#6EE7B7', borderRadius:3 },
+      { label:'夏季/小時',   data:results.map(r=>r.sHr),  backgroundColor:'#FCD34D', borderRadius:3 },
+    ]
+  }, {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ position:'bottom', labels:{ font:{size:10}, boxWidth:11 }}},
+    scales:{
+      x:{ grid:{display:false}, ticks:{font:{size:10}} },
+      y:{ grid:{color:'#F1F5F9'}, ticks:{ font:{size:10}, callback:v=>'$'+v.toFixed(2) }}
+    }
+  });
+
+  // Watt comparison
+  mk('cWatt', 'bar', {
+    labels: barLocs,
+    datasets:[
+      { label:'額定耗電 (W)', data:results.map(r=>r.w),       backgroundColor:'rgba(148,163,184,.3)', borderColor:'#94A3B8', borderWidth:1.5, borderRadius:3 },
+      { label:'實際耗電 (W)', data:results.map(r=>r.actualW), backgroundColor:'rgba(59,130,246,.5)',  borderColor:'#3B82F6', borderWidth:1.5, borderRadius:3 },
+    ]
+  }, {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ position:'bottom', labels:{ font:{size:10}, boxWidth:11 }}},
+    scales:{
+      x:{ grid:{display:false}, ticks:{font:{size:10}} },
+      y:{ grid:{color:'#F1F5F9'}, ticks:{ font:{size:10}, callback:v=>v+'W' }}
+    }
+  });
+
+  // Table
+  $('tblBody').innerHTML = results.map(r => `
+    <tr class="${r.on?'':'tr-off'}">
+      <td class="tc"><b>${r.loc}</b></td>
+      <td class="tc">${r.model}</td>
+      <td class="tc">${r.match}</td>
+      <td class="tr">${r.w.toLocaleString()} W</td>
+      <td class="tc">${(loadFactor*100).toFixed(1)}%</td>
+      <td class="tr">${Math.round(r.actualW).toLocaleString()} W</td>
+      <td class="tr">${'$'+r.nsHr.toFixed(2)}</td>
+      <td class="tr">${'$'+r.sHr.toFixed(2)}</td>
+      <td class="tr"><b>${fmt(r.nsMo)}</b></td>
+      <td class="tr"><b>${fmt(r.sMo)}</b></td>
+    </tr>`).join('');
+}
+
+// Re-render on any setting change
+['startTemp','setTemp','hours','insulation','loadRate'].forEach(id => {
+  $(id).addEventListener('change', render);
+  $(id).addEventListener('input',  render);
+});
+
+render();
+</script>
+</body>
+</html>
