@@ -4,8 +4,7 @@ echo.
 echo ⚡ 電費 Dashboard 更新中...
 echo.
 
-python update_dashboard.py --excel "C:\Users\dk098\Documents\Bills\E-Power\電費明細 by claude.xlsm"
-
+python update_dashboard.py --excel "D:\AI application code\E-bill & Air con\E-Power\電費明細 by claude_v2.xlsm"
 echo.
 if %errorlevel% equ 0 (
     echo ✅ 完成！GitHub Pages 約 1-2 分鐘後更新。
