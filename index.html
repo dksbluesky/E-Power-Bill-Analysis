@@ -242,7 +242,7 @@ function getRows(f){
 }
 
 const $=id=>document.getElementById(id);
-const money=n=>n==null?'—':'$'+n.toLocaleString('zh-TW');
+const money=n=>n==null?'—':'$'+Math.round(n).toLocaleString('zh-TW');
 
 // chart registry
 const CH={};
