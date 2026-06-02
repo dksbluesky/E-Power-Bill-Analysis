@@ -6,8 +6,8 @@ update_dashboard.py
 然後 git commit + push 到 GitHub。
 
 使用方式：
-  python update_dashboard.py --excel "C:\\路徑\\電費明細 by claude.xlsm"
-  python update_dashboard.py --excel "..." --dry-run
+  python update_dashboard.py
+  python update_dashboard.py --dry-run
 """
 
 import argparse, re, subprocess, sys
@@ -19,7 +19,7 @@ except ImportError:
     print("❌ 缺少 openpyxl，請執行：pip install openpyxl")
     sys.exit(1)
 
-DEFAULT_EXCEL  = "電費明細 by claude.xlsm"
+DEFAULT_EXCEL  = r"D:\AI application code\E-bill & Air con\E-Power\電費明細_by_claude_v2.xlsm"
 HTML_ELEC      = "index.html"
 HTML_AC        = "ac_dashboard.html"
 RAW_SHEET      = "Raw Data"
