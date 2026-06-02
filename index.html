@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title> ⚡電費分析 Dashboard</title>
+<title>電費分析 Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -186,17 +186,19 @@ tbody tr:hover td{background:#F8FAFC}
 // DATA BLOCK — Claude Code 同步更新此區塊
 // ══════════════════════════════════════════════
 const RAW=[
-  {period:"113/09",deg:312, total:80,   summer:true, ver:"A",anom:true, half:"113下",year:"113"},
-  {period:"113/11",deg:358, total:2509, summer:false,ver:"A",anom:false,half:"113下",year:"113"},
-  {period:"114/01",deg:381, total:2291, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
-  {period:"114/03",deg:406, total:2282, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
-  {period:"114/05",deg:425, total:2496, summer:false,ver:"A",anom:false,half:"114上",year:"114"},
-  {period:"114/07",deg:419, total:2756, summer:false,ver:"A",anom:false,half:"114下",year:"114"},
-  {period:"114/09",deg:418, total:3493, summer:true, ver:"A",anom:false,half:"114下",year:"114"},
-  {period:"114/11",deg:395, total:2893, summer:false,ver:"A",anom:false,half:"114下",year:"114"},
-  {period:"115/01",deg:312, total:2156, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
-  {period:"115/03",deg:345, total:2178, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
-  {period:"115/05",deg:314, total:2195, summer:false,ver:"B",anom:false,half:"115上",year:"115"},
+  // flow=實際流動費用, 節電=節電獎勵(正數), public=公共設施電費
+  // E=實際帳單確認, C=公式估算
+  {period:"113/09",deg:312, total:80,   flow:579.6, 節電:0,    public:null,   summer:true, ver:"A",anom:true, half:"113下",year:"113",confirmed:"C"},
+  {period:"113/11",deg:358, total:2509, flow:675.0, 節電:0,    public:1834.0, summer:false,ver:"A",anom:false,half:"113下",year:"113",confirmed:"C"},
+  {period:"114/01",deg:381, total:2291, flow:707.8, 節電:0,    public:1583.2, summer:false,ver:"A",anom:false,half:"114上",year:"114",confirmed:"C"},
+  {period:"114/03",deg:406, total:2282, flow:761.8, 節電:0,    public:1520.2, summer:false,ver:"A",anom:false,half:"114上",year:"114",confirmed:"C"},
+  {period:"114/05",deg:425, total:2496, flow:802.8, 節電:0,    public:1693.2, summer:false,ver:"A",anom:false,half:"114上",year:"114",confirmed:"C"},
+  {period:"114/07",deg:419, total:2756, flow:812.7, 節電:0,    public:1943.3, summer:false,ver:"A",anom:false,half:"114下",year:"114",confirmed:"E"},
+  {period:"114/09",deg:418, total:3493, flow:839.3, 節電:0,    public:2653.7, summer:true, ver:"A",anom:false,half:"114下",year:"114",confirmed:"E"},
+  {period:"114/11",deg:395, total:2893, flow:780.4, 節電:0,    public:2112.6, summer:false,ver:"A",anom:false,half:"114下",year:"114",confirmed:"E"},
+  {period:"115/01",deg:312, total:2156, flow:589.9, 節電:84.0, public:1649.6, summer:false,ver:"B",anom:false,half:"115上",year:"115",confirmed:"E"},
+  {period:"115/03",deg:345, total:2178, flow:664.5, 節電:57.6, public:1570.7, summer:false,ver:"B",anom:false,half:"115上",year:"115",confirmed:"E"},
+  {period:"115/05",deg:314, total:2195, flow:594.4, 節電:50.4, public:1651.1, summer:false,ver:"B",anom:false,half:"115上",year:"115",confirmed:"E"},
 ];
 // ══════════════════════════════════════════════
 
@@ -212,10 +214,11 @@ function calcFlow(deg,s,v){
   return Math.round(r);
 }
 
-const DATA=RAW.map(r=>{
-  const f=calcFlow(r.deg,r.summer,r.ver);
-  return{...r,flow:f,pub:r.anom?null:r.total-f};
-});
+const DATA=RAW.map(r=>({
+  ...r,
+  // Use actual flow fee from bills; pub = public facility fee
+  pub: r.anom ? null : r.public,
+}));
 
 function aggBy(rows,keyFn){
   const m=new Map();
@@ -402,6 +405,7 @@ function render(filter){
       <td class="tr">${r.deg!=null?r.deg.toLocaleString()+' 度':'—'}</td>
       <td class="tr">${money(r.flow)}${r.anom?' <small style="color:#B45309">(估算)</small>':''}</td>
       <td class="tr">${r.anom?'<i>溢繳抵扣</i>':money(r.pub)}</td>
+      <td class="tr" style="color:#059669;font-size:.75rem">${r.節電?'-$'+r.節電.toFixed(1):''}</td>
       <td class="tr"><b>${money(r.total)}</b></td>
       <td class="tc">${pct}</td>
     </tr>`;
