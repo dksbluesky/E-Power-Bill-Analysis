@@ -215,7 +215,8 @@ function calcFlow(deg,s,v){
 
 const DATA=RAW.map(r=>({
   ...r,
-  // Use actual flow fee from bills; pub = public facility fee
+  // Actual flow from bill; fall back to calcFlow when Excel formula cell reads as null
+  flow: r.flow ?? calcFlow(r.deg, r.summer, r.ver),
   pub: r.anom ? null : r.public,
 }));
 
