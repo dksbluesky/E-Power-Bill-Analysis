@@ -202,23 +202,25 @@ const RAW=[
 // ══════════════════════════════════════════════
 
 function calcFlow(deg,s,v){
+  // Bi-monthly tier sizes (monthly limits × 2)
   const tbl={
-    A:{s:[[120,1.68],[210,2.45],[170,3.70],[200,5.04],[299,6.24],[9999,8.46]],
-       n:[[120,1.68],[210,2.16],[170,3.03],[200,4.14],[299,5.07],[9999,6.63]]},
-    B:{s:[[120,1.78],[210,2.55],[170,3.80],[200,5.14],[299,6.44],[9999,8.86]],
-       n:[[120,1.78],[210,2.26],[170,3.13],[200,4.24],[299,5.27],[9999,7.03]]}
+    A:{s:[[240,1.68],[420,2.45],[340,3.70],[400,5.04],[598,6.24],[9999,8.46]],
+       n:[[240,1.68],[420,2.16],[340,3.03],[400,4.14],[598,5.07],[9999,6.63]]},
+    B:{s:[[240,1.78],[420,2.55],[340,3.80],[400,5.14],[598,6.44],[9999,8.86]],
+       n:[[240,1.78],[420,2.26],[340,3.13],[400,4.24],[598,5.27],[9999,7.03]]}
   };
   let r=0,rem=deg;
   for(const[l,p]of tbl[v][s?'s':'n']){const c=Math.min(rem,l);r+=c*p;rem-=c;if(rem<=0)break}
-  return Math.round(r);
+  return Math.round(r*10)/10;
 }
 
-const DATA=RAW.map(r=>({
-  ...r,
+const DATA=RAW.map(r=>{
   // Actual flow from bill; fall back to calcFlow when Excel formula cell reads as null
-  flow: r.flow ?? calcFlow(r.deg, r.summer, r.ver),
-  pub: r.anom ? null : r.public,
-}));
+  const flow = r.flow ?? calcFlow(r.deg, r.summer, r.ver);
+  // 公共費用 = 總電費 − 流動費用 + 節電獎勵 (節電 reduces total but not 流動)
+  const pub = r.anom ? null : (r.public ?? (r.total - flow + (r.節電 ?? 0)));
+  return {...r, flow, pub};
+});
 
 function aggBy(rows,keyFn){
   const m=new Map();
