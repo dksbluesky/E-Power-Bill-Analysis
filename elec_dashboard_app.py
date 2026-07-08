@@ -34,49 +34,132 @@ S_BRACKETS  = [(240, 1.78), (660, 2.55), (1000, 3.80), (1400, 5.14),
 
 _CALENDAR = _cal.Calendar(firstweekday=6)   # Sunday-first
 
-# Matches chart series ranges like  'Raw Data'!$F$4:$F$14
-# Single quotes and $ are literal in XML text content (no entity escaping needed)
-_CHART_REF_PAT = re.compile(
-    r"('Raw Data'!\$[A-Z]+\$\d+:\$[A-Z]+\$)(\d+)",
-    re.IGNORECASE,
-)
+def _extend_chart_ranges(excel_path: Path, new_raw_row: int,
+                          bill: dict | None = None) -> None:
+    """
+    After adding a record at Raw Data row `new_raw_row`:
+    1. Fix any #REF! formulas in the Data sheet (sheet3) for Data row dr
+    2. Extend chart ranges (aligned: both category and value end at dr)
+    3. Insert new row in Dashboard table (sheet1) and push footer down
 
+    Data-sheet: Data row dr = Raw Data row - 2
+    Chart alignment (post-fix): categories Data!$A$x:$A${dr-1} → $A${dr}
+                                 values     Data!$X$x:$X${dr-1} → $X${dr}
+    Dashboard table row for new record: dr + 1
+    bill dict keys: period, season, deg, flow, public, total
+    """
+    tmp      = excel_path.with_suffix(".tmp.xlsm")
+    dr       = new_raw_row - 2   # Data sheet row for this record
+    dash_row = dr + 1             # Dashboard table row for this record
 
-def _extend_chart_ranges(excel_path: Path, new_last_row: int) -> None:
-    """Rewrite chart XML inside the xlsm zip so series ranges extend to new_last_row."""
-    tmp = excel_path.with_suffix(".tmp.xlsm")
+    # ── Data sheet formula XML for the new row ─────────────────────────
+    rd = new_raw_row
+    n  = dr
+    new_data_row_xml = (
+        f'<row r="{n}" ht="15" customHeight="1" s="69">'
+        f'<c r="A{n}"><f>IF(\'Raw Data\'!A{rd}="","",IFERROR(\'Raw Data\'!A{rd},""))</f><v></v></c>'
+        f'<c r="B{n}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!F{rd},0))</f><v></v></c>'
+        f'<c r="C{n}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!G{rd},0))</f><v></v></c>'
+        f'<c r="D{n}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!C{rd},0))</f><v></v></c>'
+        f'<c r="E{n}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!B{rd},0))</f><v></v></c>'
+        f'</row>'
+    )
+
+    # ── Dashboard table row XML for the new bill ───────────────────────
+    new_dash_xml = ""
+    if bill:
+        period_s   = bill.get("period", "")
+        season_s   = "夏季" if bill.get("season") == "夏季" else "非夏季"
+        deg_v      = bill.get("deg", 0)
+        flow_v     = bill.get("flow")
+        public_v   = bill.get("public")
+        total_v    = bill.get("total", 0)
+        flow_str   = f"${int(round(flow_v)):,}"   if flow_v   is not None else "—"
+        public_str = f"${int(round(public_v)):,}" if public_v is not None else "—"
+        total_str  = f"${total_v:,}"
+        pct_str    = f"{round(flow_v / total_v * 100, 1)}%" if flow_v and total_v else "—"
+        new_dash_xml = (
+            f'<row r="{dash_row}" ht="18.75" customHeight="1" s="69">'
+            f'<c r="R{dash_row}" s="19" t="inlineStr"><is><t>{period_s}</t></is></c>'
+            f'<c r="S{dash_row}" s="20" t="inlineStr"><is><t>{season_s}</t></is></c>'
+            f'<c r="T{dash_row}" s="21" t="inlineStr"><is><t>{deg_v} 度</t></is></c>'
+            f'<c r="U{dash_row}" s="22" t="inlineStr"><is><t>{flow_str}</t></is></c>'
+            f'<c r="V{dash_row}" s="21" t="inlineStr"><is><t>{public_str}</t></is></c>'
+            f'<c r="W{dash_row}" s="23" t="inlineStr"><is><t>{total_str}</t></is></c>'
+            f'<c r="X{dash_row}" s="24" t="inlineStr"><is><t>{pct_str}</t></is></c>'
+            f'</row>'
+        )
+
+    # ── Regex patterns ─────────────────────────────────────────────────
+    broken_pat    = re.compile(rf'<row r="{n}"[^>]*>.*?</row>', re.DOTALL)
+    # Aligned: current chart ranges end at dr-1 → extend to dr
+    cat_pat       = re.compile(rf'(Data!\$A\$\d+:\$A\$){dr - 1}')
+    val_pat       = re.compile(rf'(Data!\$[B-E]\$\d+:\$[B-E]\$){dr - 1}')
+    # Footer row = first row containing the 📊 emoji (&#128202;) in sheet1
+    footer_row_re = re.compile(r'<row r="(\d+)"[^>]*>(?:(?!</row>).)*&#128202;', re.DOTALL)
+
     try:
-        with zipfile.ZipFile(excel_path, "r") as zin:
-            chart_names = [
-                i.filename for i in zin.infolist()
-                if i.filename.startswith("xl/charts/") and i.filename.endswith(".xml")
-            ]
-        if not chart_names:
-            return
-
-        def _patch(m):
-            return m.group(1) + str(new_last_row)
-
-        modified = False
+        fixed_data = fixed_charts = fixed_dash = False
         with zipfile.ZipFile(excel_path, "r") as zin, \
              zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
                 data = zin.read(item.filename)
-                if item.filename in chart_names:
+
+                if item.filename == "xl/worksheets/sheet3.xml":
                     text = data.decode("utf-8")
-                    new_text = _CHART_REF_PAT.sub(_patch, text)
-                    if new_text != text:
-                        modified = True
-                    data = new_text.encode("utf-8")
+                    m = broken_pat.search(text)
+                    if m and "#REF!" in m.group(0):
+                        text = text[:m.start()] + new_data_row_xml + text[m.end():]
+                        fixed_data = True
+                    data = text.encode("utf-8")
+
+                elif item.filename.startswith("xl/charts/") and item.filename.endswith(".xml"):
+                    text = data.decode("utf-8")
+                    t2   = cat_pat.sub(lambda m: m.group(1) + str(dr), text)
+                    t2   = val_pat.sub(lambda m: m.group(1) + str(dr), t2)
+                    if t2 != text:
+                        fixed_charts = True
+                    data = t2.encode("utf-8")
+
+                elif item.filename == "xl/worksheets/sheet1.xml" and new_dash_xml:
+                    text = data.decode("utf-8")
+                    fm   = footer_row_re.search(text)
+                    if fm:
+                        footer_n = int(fm.group(1))
+                        # Collect footer row numbers (>= footer_n), renumber high→low
+                        footer_rows = sorted(
+                            {int(r) for r in re.findall(r'<row r="(\d+)"', text)
+                             if int(r) >= footer_n},
+                            reverse=True,
+                        )
+                        for rn in footer_rows:
+                            text = re.sub(rf'<row r="{rn}"', f'<row r="{rn + 1}"', text)
+                            text = re.sub(
+                                rf'<c r="([A-Z]+){rn}"',
+                                lambda m, _n=rn: f'<c r="{m.group(1)}{_n + 1}"',
+                                text,
+                            )
+                        # Now insert new data row at dash_row before the shifted footer
+                        prev_pat = re.compile(
+                            rf'(<row r="{dash_row - 1}"[^>]*>.*?</row>)', re.DOTALL
+                        )
+                        text = prev_pat.sub(r'\1' + new_dash_xml, text)
+                        fixed_dash = True
+                    data = text.encode("utf-8")
+
                 zout.writestr(item, data)
 
         shutil.move(str(tmp), str(excel_path))
-        if modified:
-            print(f"✅ Excel 圖表範圍已自動延伸至第 {new_last_row} 列")
+        parts = []
+        if fixed_data:   parts.append(f"Data 第 {dr} 列公式已修復")
+        if fixed_charts: parts.append("圖表範圍已延伸")
+        if fixed_dash:   parts.append("Dashboard 表格已新增一列")
+        if parts:
+            print("Excel 自動更新：" + "；".join(parts))
     except Exception as exc:
         if tmp.exists():
             tmp.unlink()
-        print(f"⚠️ 圖表自動更新失敗（可手動延伸範圍）：{exc}")
+        print(f"Excel 自動更新失敗（可手動延伸）：{exc}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -518,8 +601,15 @@ class AddBillDialog(tk.Toplevel):
             wb.save(str(DEFAULT_EXCEL))
             wb.close()
 
-            # Extend chart series ranges to include the new row
-            _extend_chart_ranges(DEFAULT_EXCEL, new_row)
+            # Extend chart series ranges and Dashboard table
+            _extend_chart_ranges(DEFAULT_EXCEL, new_row, bill={
+                "period": period,
+                "season": self._auto_season,
+                "deg":    deg,
+                "flow":   flow,
+                "public": public,
+                "total":  total,
+            })
 
             messagebox.showinfo(
                 "成功",
