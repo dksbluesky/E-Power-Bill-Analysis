@@ -34,6 +34,129 @@ S_BRACKETS  = [(240, 1.78), (660, 2.55), (1000, 3.80), (1400, 5.14),
 
 _CALENDAR = _cal.Calendar(firstweekday=6)   # Sunday-first
 
+def _data_row_xml(dr: int, rd: int) -> str:
+    """Data sheet row XML: Data row dr ← Raw Data row rd."""
+    return (
+        f'<row r="{dr}" ht="15" customHeight="1" s="69">'
+        f'<c r="A{dr}" t="str"><f>IF(\'Raw Data\'!A{rd}="","",IFERROR(\'Raw Data\'!A{rd},""))</f></c>'
+        f'<c r="B{dr}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!F{rd},0))</f></c>'
+        f'<c r="C{dr}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!G{rd},0))</f></c>'
+        f'<c r="D{dr}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!C{rd},0))</f></c>'
+        f'<c r="E{dr}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!B{rd},0))</f></c>'
+        f'</row>'
+    )
+
+
+def _rebuild_data_and_charts(excel_path: Path) -> str:
+    """
+    Full rebuild after any Raw Data deletion or reorder.
+    Scans Raw Data → rewrites all Data sheet formulas → fixes chart ranges
+    → updates Dashboard R column so XLOOKUP auto-populates S-X.
+    Returns a status message.
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(str(excel_path), read_only=True, data_only=True, keep_vba=True)
+    ws = wb[RAW_SHEET]
+    records = []   # [(period, rd), ...]
+    for row_cells in ws.iter_rows(min_row=DATA_ROW_START, max_col=1):
+        val = row_cells[0].value
+        if val and str(val).strip():
+            records.append((str(val).strip(), row_cells[0].row))
+        else:
+            break
+    wb.close()
+
+    N = len(records)
+    if N == 0:
+        return "找不到任何 Raw Data 資料"
+
+    last_dr = N + 1           # last Data sheet row (record 1→dr=2, record N→dr=N+1)
+    tmp = excel_path.with_suffix(".tmp.xlsm")
+
+    try:
+        with zipfile.ZipFile(excel_path, "r") as zin, \
+             zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+
+                # ── Data sheet (sheet3): rebuild all formula rows ──────────
+                if item.filename == "xl/worksheets/sheet3.xml":
+                    text = data.decode("utf-8")
+                    for i, (period, rd) in enumerate(records):
+                        dr  = i + 2
+                        xml = _data_row_xml(dr, rd)
+                        pat = re.compile(rf'<row r="{dr}"[^>]*>.*?</row>', re.DOTALL)
+                        if pat.search(text):
+                            text = pat.sub(xml, text)
+                        else:
+                            prev = re.compile(rf'(<row r="{dr - 1}"[^>]*>.*?</row>)', re.DOTALL)
+                            text = prev.sub(r'\1' + xml, text)
+                    # Clear stale rows beyond current last_dr
+                    for stale in range(last_dr + 1, last_dr + 10):
+                        text = re.sub(
+                            rf'<row r="{stale}"[^>]*>.*?</row>',
+                            f'<row r="{stale}" ht="15" customHeight="1" s="69"></row>',
+                            text, flags=re.DOTALL,
+                        )
+                    data = text.encode("utf-8")
+
+                # ── Charts: set per-bill ranges to match N records ────────
+                # Aggregate-section charts (chart2: rows 48-52, chart4: rows 54-56)
+                # have fixed ranges and must NOT be overwritten.
+                elif item.filename.startswith("xl/charts/") and item.filename.endswith(".xml"):
+                    text = data.decode("utf-8")
+                    # Section end rows: start_row -> correct_end_row (fixed, not per-bill)
+                    _SECTION_END = {48: 52, 54: 56}
+
+                    def _fix_rng(m, new_end):
+                        pfx = m.group(1)
+                        sm  = re.search(r'\$(\d+):', pfx)
+                        start = int(sm.group(1)) if sm else 0
+                        if start <= 10:                  # per-bill rows → update
+                            return pfx + str(new_end)
+                        for s0, s1 in _SECTION_END.items():
+                            if s0 <= start <= s1:        # aggregate/yearly → keep fixed end
+                                return pfx + str(s1)
+                        return m.group(0)                # unknown → leave unchanged
+
+                    text = re.sub(r'(Data!\$A\$\d+:\$A\$)\d+',
+                                  lambda m: _fix_rng(m, last_dr), text)
+                    text = re.sub(r'(Data!\$[B-E]\$\d+:\$[B-E]\$)\d+',
+                                  lambda m: _fix_rng(m, last_dr), text)
+                    data = text.encode("utf-8")
+
+                # ── Dashboard (sheet1): update R column periods ────────────
+                elif item.filename == "xl/worksheets/sheet1.xml":
+                    text = data.decode("utf-8")
+                    for i, (period, _) in enumerate(records):
+                        dash_row = i + 3
+                        new_r = (f'<c r="R{dash_row}" s="19" t="inlineStr">'
+                                 f'<is><t>{period}</t></is></c>')
+                        text = re.sub(
+                            rf'<c r="R{dash_row}"[^>]*>.*?</c>',
+                            new_r, text, flags=re.DOTALL,
+                        )
+                    # Clear R column for stale Dashboard rows
+                    for stale in range(N + 3, N + 16):
+                        empty_r = (f'<c r="R{stale}" s="19" t="inlineStr">'
+                                   f'<is><t></t></is></c>')
+                        text = re.sub(
+                            rf'<c r="R{stale}"[^>]*>.*?</c>',
+                            empty_r, text, flags=re.DOTALL,
+                        )
+                    data = text.encode("utf-8")
+
+                if item.filename != "xl/calcChain.xml":   # let Excel rebuild it
+                    zout.writestr(item, data)
+
+        shutil.move(str(tmp), str(excel_path))
+        return f"重建完成：{N} 筆資料，圖表範圍至第 {last_dr} 列"
+    except Exception as exc:
+        if tmp.exists():
+            tmp.unlink()
+        return f"重建失敗：{exc}"
+
+
 def _extend_chart_ranges(excel_path: Path, new_raw_row: int,
                           bill: dict | None = None) -> None:
     """
@@ -53,45 +176,31 @@ def _extend_chart_ranges(excel_path: Path, new_raw_row: int,
     dash_row = dr + 1             # Dashboard table row for this record
 
     # ── Data sheet formula XML for the new row ─────────────────────────
-    rd = new_raw_row
-    n  = dr
-    new_data_row_xml = (
-        f'<row r="{n}" ht="15" customHeight="1" s="69">'
-        f'<c r="A{n}"><f>IF(\'Raw Data\'!A{rd}="","",IFERROR(\'Raw Data\'!A{rd},""))</f><v></v></c>'
-        f'<c r="B{n}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!F{rd},0))</f><v></v></c>'
-        f'<c r="C{n}" s="66"><f>IF(OR(\'Raw Data\'!A{rd}="",NOT(ISNUMBER(\'Raw Data\'!G{rd}))),0,IFERROR(\'Raw Data\'!G{rd},0))</f><v></v></c>'
-        f'<c r="D{n}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!C{rd},0))</f><v></v></c>'
-        f'<c r="E{n}" s="66"><f>IF(\'Raw Data\'!A{rd}="",0,IFERROR(\'Raw Data\'!B{rd},0))</f><v></v></c>'
-        f'</row>'
-    )
+    new_data_row_xml = _data_row_xml(dr, new_raw_row)
 
     # ── Dashboard table row XML for the new bill ───────────────────────
+    # R column: period as inlineStr (XLOOKUP key)
+    # S-X columns: XLOOKUP formulas — auto-pull from Raw Data, update if Raw Data edited
     new_dash_xml = ""
     if bill:
-        period_s   = bill.get("period", "")
-        season_s   = "夏季" if bill.get("season") == "夏季" else "非夏季"
-        deg_v      = bill.get("deg", 0)
-        flow_v     = bill.get("flow")
-        public_v   = bill.get("public")
-        total_v    = bill.get("total", 0)
-        flow_str   = f"${int(round(flow_v)):,}"   if flow_v   is not None else "—"
-        public_str = f"${int(round(public_v)):,}" if public_v is not None else "—"
-        total_str  = f"${total_v:,}"
-        pct_str    = f"{round(flow_v / total_v * 100, 1)}%" if flow_v and total_v else "—"
+        period_s = bill.get("period", "")
+        ra = "'Raw Data'!$A:$A"
+        def _dc(col, s, f, n=dash_row):
+            return f'<c r="{col}{n}" s="{s}"><f>{f}</f></c>'
         new_dash_xml = (
             f'<row r="{dash_row}" ht="18.75" customHeight="1" s="69">'
             f'<c r="R{dash_row}" s="19" t="inlineStr"><is><t>{period_s}</t></is></c>'
-            f'<c r="S{dash_row}" s="20" t="inlineStr"><is><t>{season_s}</t></is></c>'
-            f'<c r="T{dash_row}" s="21" t="inlineStr"><is><t>{deg_v} 度</t></is></c>'
-            f'<c r="U{dash_row}" s="22" t="inlineStr"><is><t>{flow_str}</t></is></c>'
-            f'<c r="V{dash_row}" s="21" t="inlineStr"><is><t>{public_str}</t></is></c>'
-            f'<c r="W{dash_row}" s="23" t="inlineStr"><is><t>{total_str}</t></is></c>'
-            f'<c r="X{dash_row}" s="24" t="inlineStr"><is><t>{pct_str}</t></is></c>'
-            f'</row>'
+            + _dc("S","20", f"IF(R{dash_row}=\"\",\"\",IF(OR(RIGHT(R{dash_row},2)=\"05\",RIGHT(R{dash_row},2)=\"07\",RIGHT(R{dash_row},2)=\"09\"),\"夏季\",\"非夏季\"))")
+            + _dc("T","21", f"IFERROR(IF(R{dash_row}=\"\",\"\",INDEX('Raw Data'!$B:$B,MATCH(R{dash_row},{ra},0))&amp;\" &#24230;\"),\"\")")
+            + _dc("U","22", f"IFERROR(IF(R{dash_row}=\"\",\"\",IF(ISNUMBER(INDEX('Raw Data'!$F:$F,MATCH(R{dash_row},{ra},0))),\"$\"&amp;TEXT(INDEX('Raw Data'!$F:$F,MATCH(R{dash_row},{ra},0)),\"#,##0\"),\"\")),\"\")")
+            + _dc("V","21", f"IFERROR(IF(R{dash_row}=\"\",\"\",IF(ISNUMBER(INDEX('Raw Data'!$G:$G,MATCH(R{dash_row},{ra},0))),\"$\"&amp;TEXT(INDEX('Raw Data'!$G:$G,MATCH(R{dash_row},{ra},0)),\"#,##0\"),\"\")),\"\")")
+            + _dc("W","23", f"IFERROR(IF(R{dash_row}=\"\",\"\",\"$\"&amp;TEXT(INDEX('Raw Data'!$C:$C,MATCH(R{dash_row},{ra},0)),\"#,##0\")),\"\")")
+            + _dc("X","24", f"IFERROR(IF(R{dash_row}=\"\",\"\",IF(ISNUMBER(INDEX('Raw Data'!$H:$H,MATCH(R{dash_row},{ra},0))),TEXT(INDEX('Raw Data'!$H:$H,MATCH(R{dash_row},{ra},0)),\"0.0%\"),\"\")),\"\")")
+            + f'</row>'
         )
 
     # ── Regex patterns ─────────────────────────────────────────────────
-    broken_pat    = re.compile(rf'<row r="{n}"[^>]*>.*?</row>', re.DOTALL)
+    broken_pat    = re.compile(rf'<row r="{dr}"[^>]*>.*?</row>', re.DOTALL)
     # Aligned: current chart ranges end at dr-1 → extend to dr
     cat_pat       = re.compile(rf'(Data!\$A\$\d+:\$A\$){dr - 1}')
     val_pat       = re.compile(rf'(Data!\$[B-E]\$\d+:\$[B-E]\$){dr - 1}')
@@ -108,8 +217,14 @@ def _extend_chart_ranges(excel_path: Path, new_raw_row: int,
                 if item.filename == "xl/worksheets/sheet3.xml":
                     text = data.decode("utf-8")
                     m = broken_pat.search(text)
-                    if m and "#REF!" in m.group(0):
+                    if m:
+                        # Row exists (with or without #REF!) — always replace with correct formula
                         text = text[:m.start()] + new_data_row_xml + text[m.end():]
+                        fixed_data = True
+                    else:
+                        # Row doesn't exist — insert after previous row
+                        prev_pat = re.compile(rf'(<row r="{dr - 1}"[^>]*>.*?</row>)', re.DOTALL)
+                        text = prev_pat.sub(r'\1' + new_data_row_xml, text)
                         fixed_data = True
                     data = text.encode("utf-8")
 
@@ -123,31 +238,48 @@ def _extend_chart_ranges(excel_path: Path, new_raw_row: int,
 
                 elif item.filename == "xl/worksheets/sheet1.xml" and new_dash_xml:
                     text = data.decode("utf-8")
-                    fm   = footer_row_re.search(text)
-                    if fm:
-                        footer_n = int(fm.group(1))
-                        # Collect footer row numbers (>= footer_n), renumber high→low
-                        footer_rows = sorted(
-                            {int(r) for r in re.findall(r'<row r="(\d+)"', text)
-                             if int(r) >= footer_n},
-                            reverse=True,
-                        )
-                        for rn in footer_rows:
-                            text = re.sub(rf'<row r="{rn}"', f'<row r="{rn + 1}"', text)
-                            text = re.sub(
-                                rf'<c r="([A-Z]+){rn}"',
-                                lambda m, _n=rn: f'<c r="{m.group(1)}{_n + 1}"',
-                                text,
-                            )
-                        # Now insert new data row at dash_row before the shifted footer
-                        prev_pat = re.compile(
-                            rf'(<row r="{dash_row - 1}"[^>]*>.*?</row>)', re.DOTALL
-                        )
-                        text = prev_pat.sub(r'\1' + new_dash_xml, text)
+                    # Check if dash_row already has the correct period in R column
+                    existing_row_m = re.search(
+                        rf'<row r="{dash_row}"[^>]*>.*?</row>', text, re.DOTALL
+                    )
+                    r_has_period = existing_row_m and (
+                        f'<t>{period_s}</t>' in existing_row_m.group(0)
+                        or f'>{period_s}<' in existing_row_m.group(0)
+                    )
+                    if r_has_period:
+                        pass  # Row already has the correct period — skip
+                    elif existing_row_m:
+                        # Row exists but with wrong/empty period (e.g. ghost row) — replace
+                        text = text[:existing_row_m.start()] + new_dash_xml + text[existing_row_m.end():]
                         fixed_dash = True
+                    else:
+                        fm = footer_row_re.search(text)
+                        if fm:
+                            footer_n = int(fm.group(1))
+                            if footer_n <= dash_row:
+                                # Footer is in the way — push all footer rows down by 1
+                                footer_rows = sorted(
+                                    {int(r) for r in re.findall(r'<row r="(\d+)"', text)
+                                     if int(r) >= footer_n},
+                                    reverse=True,
+                                )
+                                for rn in footer_rows:
+                                    text = re.sub(rf'<row r="{rn}"', f'<row r="{rn + 1}"', text)
+                                    text = re.sub(
+                                        rf'<c r="([A-Z]+){rn}"',
+                                        lambda m, _n=rn: f'<c r="{m.group(1)}{_n + 1}"',
+                                        text,
+                                    )
+                            # Insert new data row after row dash_row - 1
+                            prev_pat = re.compile(
+                                rf'(<row r="{dash_row - 1}"[^>]*>.*?</row>)', re.DOTALL
+                            )
+                            text = prev_pat.sub(r'\1' + new_dash_xml, text)
+                            fixed_dash = True
                     data = text.encode("utf-8")
 
-                zout.writestr(item, data)
+                if item.filename != "xl/calcChain.xml":   # let Excel rebuild it
+                    zout.writestr(item, data)
 
         shutil.move(str(tmp), str(excel_path))
         parts = []
@@ -595,7 +727,7 @@ class AddBillDialog(tk.Toplevel):
                                          self._s_days, self._ns_days,
                                          self.start_var.get().strip()))
             ws.cell(row=new_row, column=10, value=half)            # J 半年
-            ws.cell(row=new_row, column=11, value=period[:3])      # K 年度
+            ws.cell(row=new_row, column=11, value=f'=IF(A{new_row}="","",LEFT(A{new_row},3))')  # K 年度
             ws.cell(row=new_row, column=12, value=node)            # L 節電獎勵
 
             wb.save(str(DEFAULT_EXCEL))
@@ -654,6 +786,11 @@ class App(tk.Tk):
                   bg="#94A3B8", fg="white", padx=14, pady=8, relief="flat",
                   command=self.dry_run).grid(row=0, column=2, padx=6)
 
+        tk.Button(btn_frame, text="🔧 重建 Excel 圖表", font=("Microsoft JhengHei", 11),
+                  bg="#D97706", fg="white", padx=14, pady=8, relief="flat",
+                  command=self.rebuild_excel).grid(row=1, column=0, columnspan=3,
+                                                   padx=6, pady=(6, 0), sticky="ew")
+
         self.log = scrolledtext.ScrolledText(self, height=18, font=("Consolas", 9), bg="white")
         self.log.pack(fill="both", expand=True, padx=16, pady=12)
 
@@ -696,6 +833,11 @@ class App(tk.Tk):
 
     def dry_run(self):
         self._run(["--dry-run"])
+
+    def rebuild_excel(self):
+        self.write_log("重建 Excel 圖表與 Data 表...")
+        msg = _rebuild_data_and_charts(DEFAULT_EXCEL)
+        self.write_log(msg)
 
 
 if __name__ == "__main__":
