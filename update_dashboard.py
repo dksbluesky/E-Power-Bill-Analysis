@@ -193,17 +193,35 @@ def update_ac_rates(html_path: Path, records: list[dict]) -> bool:
     return True
 
 # ── Git push ──────────────────────────────────────────────────────────────────
+_NOTHING_TO_COMMIT = ("nothing to commit", "nothing added", "no changes added")
+
 def git_push(message: str, files: list[str]):
+    # Stage explicit HTML files + all other tracked modified files (e.g. .py scripts)
     for f in files:
-        subprocess.run(["git", "add", f], check=True)
+        subprocess.run(["git", "add", f], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run(["git", "add", "-u"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     result = subprocess.run(["git", "commit", "-m", message],
-                            capture_output=True, text=True)
-    if "nothing to commit" in result.stdout + result.stderr:
-        print("ℹ️  資料未變動，不需要 push"); return
-    if result.returncode != 0:
-        print(f"❌ commit 失敗：{result.stderr}"); sys.exit(1)
-    subprocess.run(["git", "push"], check=True)
-    print("🚀 已成功 push 到 GitHub！")
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out = (result.stdout or b"").decode("utf-8", errors="replace")
+    err = (result.stderr or b"").decode("utf-8", errors="replace")
+    combined = out + err
+    if result.returncode == 0:
+        print("✅ commit 成功")
+    elif any(phrase in combined for phrase in _NOTHING_TO_COMMIT):
+        print("ℹ️  無新變動，嘗試 push 既有 commit ...")
+    else:
+        print(f"❌ commit 失敗：\n{combined}"); sys.exit(1)
+
+    push = subprocess.run(["git", "push"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pout = (push.stdout or b"").decode("utf-8", errors="replace")
+    perr = (push.stderr or b"").decode("utf-8", errors="replace")
+    pcomb = pout + perr
+    if push.returncode == 0 or "up to date" in pcomb.lower() or "up-to-date" in pcomb.lower():
+        print("🚀 已成功 push 到 GitHub！")
+    else:
+        print(f"❌ push 失敗：\n{pcomb}"); sys.exit(1)
 
 # ── main ──────────────────────────────────────────────────────────────────────
 def main():
