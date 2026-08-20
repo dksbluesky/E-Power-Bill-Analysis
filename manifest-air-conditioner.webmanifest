@@ -1,0 +1,13 @@
+{
+  "name": "冷氣耗電 Dashboard",
+  "short_name": "冷氣耗電",
+  "start_url": "./ac_dashboard.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#0F766E",
+  "background_color": "#F0F4FA",
+  "icons": [
+    { "src": "icons/air-conditioner-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/air-conditioner-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
