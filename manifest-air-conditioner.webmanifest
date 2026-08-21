@@ -1,6 +1,7 @@
 {
   "name": "冷氣耗電 Dashboard",
   "short_name": "冷氣耗電",
+  "id": "./air-conditioner-dashboard-pwa",
   "start_url": "./ac_dashboard.html",
   "scope": "./",
   "display": "standalone",
