@@ -22,7 +22,7 @@ from tkinter import messagebox, scrolledtext
 
 REPO_ROOT      = Path(__file__).parent
 SCRIPT         = REPO_ROOT / "update_dashboard.py"
-DEFAULT_EXCEL  = Path(r"D:\AI application code\E-bill & Air con\E-Power\電費明細_by_claude_v2.xlsm")
+DEFAULT_EXCEL  = Path(r"D:\AI application code\E-bill & Air con\E-Power\電費明細_by_claude_v3.xlsm")
 RAW_SHEET      = "Raw Data"
 DATA_ROW_START = 4
 

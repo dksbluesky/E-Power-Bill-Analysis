@@ -19,7 +19,7 @@ except ImportError:
     print("❌ 缺少 openpyxl，請執行：pip install openpyxl")
     sys.exit(1)
 
-DEFAULT_EXCEL  = r"D:\AI application code\E-bill & Air con\E-Power\電費明細_by_claude_v2.xlsm"
+DEFAULT_EXCEL  = r"D:\AI application code\E-bill & Air con\E-Power\電費明細_by_claude_v3.xlsm"
 HTML_ELEC      = "index.html"
 HTML_AC        = "ac_dashboard.html"
 RAW_SHEET      = "Raw Data"
