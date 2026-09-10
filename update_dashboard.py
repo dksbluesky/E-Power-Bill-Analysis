@@ -218,6 +218,20 @@ def git_push(message: str, files: list[str]):
     pout = (push.stdout or b"").decode("utf-8", errors="replace")
     perr = (push.stderr or b"").decode("utf-8", errors="replace")
     pcomb = pout + perr
+    if push.returncode != 0 and ("fetch first" in pcomb.lower() or "non-fast-forward" in pcomb.lower()):
+        print("ℹ️  GitHub 有較新版本，正在自動整合後重試 ...")
+        pull = subprocess.run(["git", "pull", "--rebase", "origin", "main"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pull_out = ((pull.stdout or b"") + (pull.stderr or b"")).decode(
+            "utf-8", errors="replace"
+        )
+        if pull.returncode != 0:
+            print(f"❌ 自動整合失敗：\n{pull_out}"); sys.exit(1)
+        push = subprocess.run(["git", "push", "origin", "main"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pcomb = ((push.stdout or b"") + (push.stderr or b"")).decode(
+            "utf-8", errors="replace"
+        )
     if push.returncode == 0 or "up to date" in pcomb.lower() or "up-to-date" in pcomb.lower():
         print("🚀 已成功 push 到 GitHub！")
     else:
